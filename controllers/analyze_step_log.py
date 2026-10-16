@@ -2,8 +2,13 @@
 """M10: lépésenkénti napló elemzése az M09-ben dokumentált kétmodális
 akadálykerülési jelenség (feltételezett oszcilláció) diagnosztizálásához.
 
-Bemenet: `controllers/baseline_line_follower.py` `LepesNaplozo` által írt
-`logs/m10_lepes_naplo.jsonl` fájl (lásd docs/m10-plan.md, 3. munkacsomag).
+Bemenet: lépésenkénti napló: az M10-es `logs/m10_lepes_naplo.jsonl` (felső szintű
+`position`) vagy az M11 óta a `common/kiserlet_naplo.py` formátuma, ahol a
+`position` és a `collision_count` a `privilegizalt_diagnosztika` alatt van
+(lásd docs/m10-plan.md, 3. munkacsomag; docs/m11-plan.md). Mindkét formátum
+olvasható. Ha egy futás egyetlen bejegyzésében sincs pozíció, a futás NEM
+"rendben", hanem "NINCS ADAT" jelölést kap - ellenkező esetben egy formátumváltás
+miatt vak elemző minden futásra hamis "rendben"-t mondana.
 
 Módszertan (heurisztikus, NEM végleges hiba-taxonómia):
 Minden futáson (`run_id`) belül megkeressük az AKADÁLY állapotba lépés
@@ -59,6 +64,18 @@ def futasokra_csoportositva(
     return futasok
 
 
+def pozicio(bejegyzes: dict[str, Any]) -> dict[str, float] | None:
+    """A privilegizalt pozicio mind a ket naploformatumbol (M11: diagnosztika alatt, M10: felso szint)."""
+    diag = bejegyzes.get("privilegizalt_diagnosztika") or {}
+    return diag.get("position") or bejegyzes.get("position")
+
+
+def utkozes_szamlalo(bejegyzes: dict[str, Any]) -> Any:
+    diag = bejegyzes.get("privilegizalt_diagnosztika") or {}
+    ertek = diag.get("collision_count")
+    return ertek if ertek is not None else bejegyzes.get("collision_count")
+
+
 def xz_tavolsag(poz1: dict[str, float] | None, poz2: dict[str, float] | None) -> float | None:
     if not poz1 or not poz2:
         return None
@@ -85,24 +102,27 @@ def futas_elemzese(
     belepesek = akadaly_belepesek(futas_bejegyzesei)
     gyanus_parok = []
     for elozo, kovetkezo in zip(belepesek, belepesek[1:]):
-        tav = xz_tavolsag(elozo.get("position"), kovetkezo.get("position"))
+        tav = xz_tavolsag(pozicio(elozo), pozicio(kovetkezo))
         if tav is not None and tav < kuszob_m:
             gyanus_parok.append(
                 {
                     "elozo_lepes": elozo["lepes_szam"],
                     "kovetkezo_lepes": kovetkezo["lepes_szam"],
                     "tavolsag_m": round(tav, 4),
-                    "position": kovetkezo.get("position"),
+                    "position": pozicio(kovetkezo),
                 }
             )
 
     utolso = futas_bejegyzesei[-1] if futas_bejegyzesei else {}
+    van_pozicio = any(pozicio(b) for b in futas_bejegyzesei)
     return {
         "run_id": run_id,
         "akadaly_belepesek_szama": len(belepesek),
         "gyanus_oszcillacios_parok_szama": len(gyanus_parok),
         "gyanus_parok": gyanus_parok,
-        "vegso_collision_count": utolso.get("collision_count"),
+        "vegso_collision_count": utkozes_szamlalo(utolso),
+        # False: a naplo egyetlen sorabol sem olvashato pozicio -> az elemzes nem ertelmezheto
+        "van_pozicio": van_pozicio,
     }
 
 
@@ -143,7 +163,12 @@ def main() -> int:
 
     print(f"{len(eredmenyek)} futas elemezve (kuszob: {args.kuszob_m} m)\n")
     for eredmeny in eredmenyek:
-        jelzo = "!! GYANUS !!" if eredmeny["gyanus_oszcillacios_parok_szama"] > 0 else "rendben"
+        if not eredmeny["van_pozicio"]:
+            jelzo = "NINCS ADAT (nincs pozicio a naploban)"
+        elif eredmeny["gyanus_oszcillacios_parok_szama"] > 0:
+            jelzo = "!! GYANUS !!"
+        else:
+            jelzo = "rendben"
         print(
             f"run_id={eredmeny['run_id'][:8]}... "
             f"akadaly_belepesek={eredmeny['akadaly_belepesek_szama']} "
@@ -155,6 +180,13 @@ def main() -> int:
                 f"    lepes {par['elozo_lepes']} -> {par['kovetkezo_lepes']}: "
                 f"{par['tavolsag_m']} m (poz: {par['position']})"
             )
+
+    adat_nelkul = sum(1 for e in eredmenyek if not e["van_pozicio"])
+    if adat_nelkul:
+        print(
+            f"\nFIGYELEM: {adat_nelkul}/{len(eredmenyek)} futasnal nincs pozicio a naploban, "
+            "ezeket nem lehetett elemezni."
+        )
 
     osszes_gyanus = sum(e["gyanus_oszcillacios_parok_szama"] for e in eredmenyek)
     erintett_futasok = sum(1 for e in eredmenyek if e["gyanus_oszcillacios_parok_szama"] > 0)

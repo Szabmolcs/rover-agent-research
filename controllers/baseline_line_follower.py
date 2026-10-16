@@ -133,6 +133,10 @@ def szenzor_mezok(observe: dict[str, Any]) -> dict[str, Any]:
         "sensor_center": observe.get("sensor_center"),
         "sensor_right": observe.get("sensor_right"),
         "lidar_szektor_min": observe.get("lidar_szektor_min"),
+        # A kerules dontese (akadaly_elol/akadaly_oldalt) a nyers sugarakbol szamol, ezert
+        # ezeket is naplozni kell, kulonben a kerulesi dontesek a naplobol nem rekonstrualhatok.
+        "lidar_nyers": observe.get("lidar_nyers"),
+        "lidar_nyers_ervenyes": observe.get("lidar_nyers_ervenyes"),
     }
 
 
@@ -700,7 +704,7 @@ def _parameterek() -> dict:
     return {
         nev: ertek
         for nev, ertek in sorted(globals().items())
-        if nev.isupper() and isinstance(ertek, (int, float, tuple))
+        if nev.isupper() and isinstance(ertek, (int, float, tuple, list))
     }
 
 

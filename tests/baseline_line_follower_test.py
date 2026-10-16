@@ -29,7 +29,10 @@ GYOKER = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(GYOKER / "controllers"))
 
 from baseline_line_follower import (  # noqa: E402
+    LIDAR_ELORE_M,
+    LIDAR_LATOMEZO_FOK,
     MOVE_LEPES_M,
+    ROVER_ELEJE_M,
     VAKZONA_M,
     Allapot,
     FutasStatisztika,
@@ -62,17 +65,46 @@ class StubGatewayKliens:
         return {"status": "completed"}
 
 
+LIDAR_SUGARSZAM = 36
+LIDAR_NINCS_AKADALY_M = 5.0
+
+
+def lidar_nyers(akadaly_tavolsag_m: float) -> tuple[list[float], list[bool]]:
+    """Nyers LiDAR-sugarak es talalati maszk egy, a rover elott allo FAL-hoz.
+
+    A Unity valos observe valasza `lidar_nyers` es `lidar_nyers_ervenyes` mezot is ad, es a
+    kerules (akadaly_elol / akadaly_oldalt) ezekbol dont - a szektoros `lidar_szektor_min`
+    csak tartalek. Ezert a csonk is ad nyers sugarakat, hogy az allapotgep-tesztek a
+    valodi dontesi agat futtassak. A tavolsag ugyanazt jelenti, mint a korabbi szektoros
+    csonkban: a rover elejetol az akadalyig mert elore irany tavolsag (a fal a rover elott
+    `akadaly_tavolsag_m` meterre van). Ha ez a "nincs akadaly" ertek, egy sugar sem talal.
+    """
+    n = LIDAR_SUGARSZAM
+    if akadaly_tavolsag_m >= LIDAR_NINCS_AKADALY_M:
+        return [10.0] * n, [False] * n
+    eleje = ROVER_ELEJE_M - LIDAR_ELORE_M
+    elore = akadaly_tavolsag_m + eleje
+    nyers = []
+    for i in range(n):
+        szog = math.radians(-LIDAR_LATOMEZO_FOK / 2 + i * LIDAR_LATOMEZO_FOK / (n - 1))
+        nyers.append(elore / math.cos(szog) if abs(math.cos(szog)) > 1e-6 else 10.0)
+    return nyers, [r <= 10.0 for r in nyers]
+
+
 def observe_valasz(
     white: bool = False,
     akadaly_tavolsag_m: float = 5.0,
     intensity_bal: float = 0.0,
     intensity_jobb: float = 0.0,
 ) -> dict[str, Any]:
+    nyers, ervenyes = lidar_nyers(akadaly_tavolsag_m)
     return {
         "sensor_left": {"white": white, "intensity": intensity_bal},
         "sensor_center": {"white": white, "intensity": 0.0},
         "sensor_right": {"white": white, "intensity": intensity_jobb},
         "lidar_szektor_min": [akadaly_tavolsag_m] * 6,
+        "lidar_nyers": nyers,
+        "lidar_nyers_ervenyes": ervenyes,
         "position": {"x": 0.0, "y": 0.0, "z": 0.0},
         "collision_occurred": False,
         "collision_count": 0,

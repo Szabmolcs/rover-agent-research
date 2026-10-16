@@ -40,6 +40,15 @@ jobs:
       - name: Szcenario seed reprodukalhatosagi teszt
         run: python3 tests/scenario_seed_test.py
 
+      - name: Kor-metrika teszt
+        run: python3 tests/kor_metrika_test.py
+
+      - name: Lepesnaplo-elemzo teszt
+        run: python3 tests/analyze_step_log_test.py
+
+      - name: Naplo- es metaadat-mezok teszt
+        run: python3 tests/naplo_mezok_test.py
+
       - name: Adapter tesztek (M12, mock backend)
         run: python3 tests/adapter_test.py
 
